@@ -19,6 +19,7 @@ class TSPSolver:
 		self.cap = 100000
 		self.x = []
 		self.y = []
+		self.start_cost = 0
 
 
 	def setup_with_scenario(self, scenario):
@@ -653,6 +654,9 @@ class TSPSolver:
 	def cull_population(self, population, num_to_keep, method_name, top_to_keep=1):
 		if method_name == 'ranked':
 			culled = self.ranked_cull(population, num_to_keep)
+			if self.generation == 1:
+				route = [self._scenario.getCities()[i] for i in culled[0].path]
+				self.start_cost = TSPSolution(route).cost
 			print("Gen " + str(self.generation) + " Champion - Fitness: " + str(culled[0].fitness) + " - Cost: " + str(1/culled[0].fitness))
 			return culled
 		elif method_name == 'random':
