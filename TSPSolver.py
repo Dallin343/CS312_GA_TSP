@@ -8,6 +8,7 @@ import time
 import numpy as np
 import multiprocessing as mp
 from copy import deepcopy
+import plotly.io as pio
 
 
 class TSPSolver:
@@ -16,6 +17,9 @@ class TSPSolver:
 		self.generation_fitness = 0
 		self.generation = 0
 		self.cap = 100000
+		self.x = []
+		self.y = []
+
 
 	def setup_with_scenario(self, scenario):
 		self._scenario = scenario
@@ -48,9 +52,9 @@ class TSPSolver:
 				route.append(cities[perm[i]])
 			bssf = TSPSolution(route)
 			count += 1
-			if bssf.cost < np.inf:
+			#if bssf.cost < np.inf:
 				# Found a valid route
-				found_tour = True
+			found_tour = True
 		end_time = time.time()
 		results['cost'] = bssf.cost if found_tour else math.inf
 		results['time'] = end_time - start_time
@@ -292,7 +296,7 @@ class TSPSolver:
 		self.generation = 0
 		start_time = time.time()
 		# population size
-		k = 100
+		k = 20
 		num_children = k - 2
 		num_keep = k - num_children
 
@@ -300,12 +304,16 @@ class TSPSolver:
 
 		# generate initial population
 		initial_population = self.generate_initial_population(k, method_name='greedy')
+		print("Initial population time: ", time.time() - start_time)
+		init_cost = 0
 
 		while time.time() - start_time < time_allowance and self.generation < 100000:
+
 			self.generation += 1
 			# calculate population fitness
 			self.calculate_population_fitness(initial_population)
-
+			self.y.append(self.generation_fitness)
+			self.x.append(self.generation)
 			#print('\nInitial Population:')
 			#for genome in initial_population:
 				#print(genome.path, genome.fitness)
@@ -319,7 +327,7 @@ class TSPSolver:
 			crossover_children = self.crossover(parents, num_genes//2)
 
 			# mutate children
-			self.mutate_population(crossover_children, chance_of_mutating=7, num_mutations=1)
+			self.mutate_population(crossover_children, chance_of_mutating=0.5, num_mutations=1)
 
 			#print('\nMutated Population')
 			#for genome in  crossover_children:
@@ -328,7 +336,7 @@ class TSPSolver:
 			#print('Mutated Population Size:', len(crossover_children))
 
 			# cull parents
-			initial_population = self.cull_population(initial_population, method_name='random', num_to_keep=num_keep, top_to_keep= 1)
+			initial_population = self.cull_population(initial_population, method_name='ranked', num_to_keep=num_keep, top_to_keep=1)
 			crossover_children.extend(initial_population)
 			initial_population = crossover_children
 			#print('\nCulled Population')
@@ -348,9 +356,18 @@ class TSPSolver:
 		results['time'] = end_time - start_time
 		results['count'] = 1
 		results['soln'] = best_solution
-		results['max'] = None
+		results['max'] = self.start_cost
 		results['total'] = self.generation
 		results['pruned'] = None
+
+		fig = {
+			"data": [{"type": "histogram",
+					  "x": self.x,
+					  "y": self.y}],
+			"layout": {"title": {"text": "fitness per generation"}}
+		}
+
+		pio.show(fig)
 
 		return results
 
@@ -453,8 +470,8 @@ class TSPSolver:
 			perm = np.random.permutation(num_cities)
 			route = [cities[i] for i in perm]
 			solution = TSPSolution(route)
-			if solution.cost < np.inf:
-				return list(perm)
+			#if solution.cost < np.inf:
+			return list(perm)
 
 	def random_initial_population(self, population_size):
 		random_population = list()
@@ -494,7 +511,7 @@ class TSPSolver:
 	def select_parents(self, population, num_parents=2):
 		winners = []
 		for i in range(num_parents):
-			winners.append(self.roulette_select(population))
+			winners.append(self.tournament_select(population))
 		return winners
 
 	def tournament_select(self, population, tournament_size=3):
@@ -607,7 +624,7 @@ class TSPSolver:
 	def mutate_population(self, population, chance_of_mutating=25, num_mutations=1, return_valid_path=False):
 		for genome in population:
 			for i, gene in enumerate(genome.path):
-				if random.randint(0, 99) < chance_of_mutating:
+				if random.uniform(0, 99) < chance_of_mutating:
 					self.mutate_genome_test(genome, i, num_mutations, return_valid_path)
 			#if random.randint(0, 99) < chance_of_mutating:
 			#	self.mutate_genome(genome, num_mutations, return_valid_path)
@@ -631,16 +648,18 @@ class TSPSolver:
 
 	@staticmethod
 	def ranked_cull(population, num_to_keep):
-		return sorted(population, key=lambda genome: genome.fitness, reverse=False)[:num_to_keep]
+		return sorted(population, key=lambda genome: genome.fitness, reverse=True)[:num_to_keep]
 
 	def cull_population(self, population, num_to_keep, method_name, top_to_keep=1):
 		if method_name == 'ranked':
 			culled = self.ranked_cull(population, num_to_keep)
-			# print("Gen " + str(self.generation) + " Champion - Fitness: " + str(culled[0].fitness) + " - Cost: " + str(1/culled[0].fitness))
+			print("Gen " + str(self.generation) + " Champion - Fitness: " + str(culled[0].fitness) + " - Cost: " + str(1/culled[0].fitness))
 			return culled
 		elif method_name == 'random':
 			culled = self.random_cull(population, num_to_keep, top_to_keep)
-			# print("Gen " + str(self.generation) + " Champion - Fitness: " + str(culled[0].fitness) + " - Cost: " + str(1/culled[0].fitness))
+			if self.generation == 1:
+				self.start_cost = TSPSolution(culled[0].path).cost
+			print("Gen " + str(self.generation) + " Champion - Fitness: " + str(culled[0].fitness) + " - Cost: " + str(1/culled[0].fitness))
 			return culled
 		# TODO implement roulette culling method
 		else:

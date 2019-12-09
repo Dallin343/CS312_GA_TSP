@@ -402,9 +402,9 @@ class Proj5GUI( QMainWindow ):
 
 		self.curSeed		= QLineEdit('20')
 		self.curSeed.setFixedWidth(100)
-		self.size			= QLineEdit('15')
+		self.size			= QLineEdit('200')
 		self.size.setFixedWidth(50)
-		self.timeLimit		= QLineEdit('60')
+		self.timeLimit		= QLineEdit('120')
 		self.timeLimit.setFixedWidth(50)
 		self.numSolutions	= QLineEdit('--')
 		self.numSolutions.setFixedWidth(100)
@@ -505,8 +505,8 @@ class Proj5GUI( QMainWindow ):
 		for alg in self.ALGORITHMS:
 			self.algDropDown.addItem( alg[0] )
 		self.algDropDown.activated.connect(self.algChanged)
-		self.algDropDown.setCurrentIndex(2)
-		self.algChanged(2) # to handle start state
+		self.algDropDown.setCurrentIndex(3)
+		self.algChanged(3) # to handle start state
 
 		self.graphReady = False
 
