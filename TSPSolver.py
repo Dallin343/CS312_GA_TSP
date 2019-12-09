@@ -289,6 +289,7 @@ class TSPSolver:
 	'''
 
 	def fancy(self, time_allowance=60.0):
+		self.generation = 0
 		start_time = time.time()
 		# population size
 		k = 100
@@ -300,7 +301,7 @@ class TSPSolver:
 		# generate initial population
 		initial_population = self.generate_initial_population(k, method_name='greedy')
 
-		while self.generation < time_allowance:
+		while time.time() - start_time < time_allowance and self.generation < 100000:
 			self.generation += 1
 			# calculate population fitness
 			self.calculate_population_fitness(initial_population)
@@ -311,14 +312,13 @@ class TSPSolver:
 				#assert self.get_fitness(genome) != np.inf
 			#print('Initial Population Size:', len(initial_population))
 
-			# TODO select parents
+			# select parents
 			parents = self.select_parents(initial_population, num_children)
 
-			# TODO crossover
+			# crossover
 			crossover_children = self.crossover(parents, num_genes//2)
 
-			# mutate population
-			# TODO only mutate children
+			# mutate children
 			self.mutate_population(crossover_children, chance_of_mutating=7, num_mutations=1)
 
 			#print('\nMutated Population')
@@ -327,8 +327,7 @@ class TSPSolver:
 				#assert self.get_fitness(genome) != np.inf
 			#print('Mutated Population Size:', len(crossover_children))
 
-			# cull population
-			# TODO only cull parents
+			# cull parents
 			initial_population = self.cull_population(initial_population, method_name='random', num_to_keep=num_keep, top_to_keep= 1)
 			crossover_children.extend(initial_population)
 			initial_population = crossover_children
@@ -337,6 +336,23 @@ class TSPSolver:
 				#print(genome.path, genome.fitness)
 			#	assert self.get_fitness(genome) != np.inf
 			#print('Culled Population Size:', len(initial_population))
+
+		end_time = time.time()
+
+		results = {}
+		best_genome = initial_population[self.get_index_of_best_genome(initial_population)]
+		best_route = [self._scenario.getCities()[i] for i in best_genome.path]
+		best_solution = TSPSolution(best_route)
+
+		results['cost'] = best_solution.cost
+		results['time'] = end_time - start_time
+		results['count'] = 1
+		results['soln'] = best_solution
+		results['max'] = None
+		results['total'] = self.generation
+		results['pruned'] = None
+
+		return results
 
 	# This function is O(n^3) because it contains three nested loops each of which run in O(n) time
 	def all_greedy_paths(self, max_tours=None):
@@ -620,11 +636,11 @@ class TSPSolver:
 	def cull_population(self, population, num_to_keep, method_name, top_to_keep=1):
 		if method_name == 'ranked':
 			culled = self.ranked_cull(population, num_to_keep)
-			print("Gen " + str(self.generation) + " Champion - Fitness: " + str(culled[0].fitness) + " - Cost: " + str(1/culled[0].fitness))
+			# print("Gen " + str(self.generation) + " Champion - Fitness: " + str(culled[0].fitness) + " - Cost: " + str(1/culled[0].fitness))
 			return culled
 		elif method_name == 'random':
 			culled = self.random_cull(population, num_to_keep, top_to_keep)
-			print("Gen " + str(self.generation) + " Champion - Fitness: " + str(culled[0].fitness) + " - Cost: " + str(1/culled[0].fitness))
+			# print("Gen " + str(self.generation) + " Champion - Fitness: " + str(culled[0].fitness) + " - Cost: " + str(1/culled[0].fitness))
 			return culled
 		# TODO implement roulette culling method
 		else:
@@ -637,7 +653,7 @@ class TSPSolver:
 		best_index = None
 
 		for i in range(len(population)):
-			if population[i].fitness > best_fitness:
+			if population[i].fitness is not None and population[i].fitness > best_fitness:
 				best_fitness = population[i].fitness
 				best_index = i
 
