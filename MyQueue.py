@@ -1,7 +1,7 @@
 import numpy as np
 
 
-class Queue:
+class MyQueue:
     def __init__(self):
         self.queue = []
         self.max_size = 0

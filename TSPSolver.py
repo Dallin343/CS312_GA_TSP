@@ -2,16 +2,20 @@
 
 from TSPClasses import *
 from State import *
-from Queue import *
+from MyQueue import *
 from Genome import *
 import time
 import numpy as np
+import multiprocessing as mp
 from copy import deepcopy
 
 
 class TSPSolver:
 	def __init__(self):
 		self._scenario = None
+		self.generation_fitness = 0
+		self.generation = 0
+		self.cap = 100000
 
 	def setup_with_scenario(self, scenario):
 		self._scenario = scenario
@@ -180,7 +184,7 @@ class TSPSolver:
 		initial_state.reduce_matrix()		# O(n)
 
 		# set up the queue
-		my_queue = Queue()
+		my_queue = MyQueue()
 		my_queue.insert(initial_state)	 # O(nlog(n))
 
 		# search for solutions until we run out of time or try every option
@@ -285,42 +289,54 @@ class TSPSolver:
 	'''
 
 	def fancy(self, time_allowance=60.0):
+		start_time = time.time()
+		# population size
+		k = 100
+		num_children = k - 2
+		num_keep = k - num_children
+
+		num_genes = len(self._scenario.getCities())
 
 		# generate initial population
-		initial_population = self.generate_initial_population(5, method_name='greedy')
+		initial_population = self.generate_initial_population(k, method_name='greedy')
 
-		# calculate population fitness
-		self.calculate_population_fitness(initial_population)
+		while self.generation < time_allowance:
+			self.generation += 1
+			# calculate population fitness
+			self.calculate_population_fitness(initial_population)
 
-		print('\nInitial Population:')
-		for genome in initial_population:
-			print(genome.path, genome.fitness)
-			assert self.get_fitness(genome) != np.inf
-		print('Initial Population Size:', len(initial_population))
+			#print('\nInitial Population:')
+			#for genome in initial_population:
+				#print(genome.path, genome.fitness)
+				#assert self.get_fitness(genome) != np.inf
+			#print('Initial Population Size:', len(initial_population))
 
-		# TODO select parents
+			# TODO select parents
+			parents = self.select_parents(initial_population, num_children)
 
-		# TODO crossover
+			# TODO crossover
+			crossover_children = self.crossover(parents, num_genes//2)
 
-		# mutate population
-		# TODO only mutate children
-		self.mutate_population(initial_population, chance_of_mutating=50, num_mutations=1, return_valid_path=True)
+			# mutate population
+			# TODO only mutate children
+			self.mutate_population(crossover_children, chance_of_mutating=7, num_mutations=1)
 
-		print('\nMutated Population')
-		for genome in initial_population:
-			print(genome.path)
-			assert self.get_fitness(genome) != np.inf
-		print('Mutated Population Size:', len(initial_population))
+			#print('\nMutated Population')
+			#for genome in  crossover_children:
+				#print(genome.path)
+				#assert self.get_fitness(genome) != np.inf
+			#print('Mutated Population Size:', len(crossover_children))
 
-		# cull population
-		# TODO only cull parents
-		initial_population = self.cull_population(initial_population, method_name='random', num_to_keep=4, top_to_keep= 2)
-
-		print('\nCulled Population')
-		for genome in initial_population:
-			print(genome.path, genome.fitness)
-			assert self.get_fitness(genome) != np.inf
-		print('Culled Population Size:', len(initial_population))
+			# cull population
+			# TODO only cull parents
+			initial_population = self.cull_population(initial_population, method_name='random', num_to_keep=num_keep, top_to_keep= 1)
+			crossover_children.extend(initial_population)
+			initial_population = crossover_children
+			#print('\nCulled Population')
+			#for genome in initial_population:
+				#print(genome.path, genome.fitness)
+			#	assert self.get_fitness(genome) != np.inf
+			#print('Culled Population Size:', len(initial_population))
 
 	# This function is O(n^3) because it contains three nested loops each of which run in O(n) time
 	def all_greedy_paths(self, max_tours=None):
@@ -430,48 +446,155 @@ class TSPSolver:
 			random_population.append(Genome(self.random_path()))
 		return random_population
 
+	# def random_initial_population(self, population_size):
+	# 	self.parallel_pool = mp.Pool(mp.cpu_count())
+	# 	random_population = list()
+	# 	for i in range(population_size):
+	# 		self.parallel_search_result = None
+	# 		[self.parallel_pool.apply_async(self.random_path, args=None, callback=self.parallel_search_callback) for i in range(10)]
+	# 		self.parallel_pool.close()
+	# 		while self.parallel_search_result is None:
+	# 			time.sleep(2)
+	# 		random_population.append(Genome(self.parallel_search_result))
+	# 	return random_population
+	#
+	# def parallel_search_callback(self, result):
+	# 	if result:
+	# 		self.parallel_search_result = result
+	# 		self.pool.terminate()
+
 	def get_fitness(self, genome):
 		solution = TSPSolution([self._scenario.getCities()[i] for i in genome.path])
-		return solution.cost
+		if solution.cost == np.inf:
+			return 0
+		return 1/solution.cost
 
 	def calculate_population_fitness(self, population):
+		self.generation_fitness = 0
 		for genome in population:
 			genome.fitness = self.get_fitness(genome)
+			self.generation_fitness += genome.fitness
 
-	def mutate_genome(self, genome, num_mutations=1, return_valid_path=True):
+	def select_parents(self, population, num_parents=2):
+		winners = []
+		for i in range(num_parents):
+			winners.append(self.roulette_select(population))
+		return winners
+
+	def tournament_select(self, population, tournament_size=3):
+		tourn = []
+		for i in range(tournament_size):
+			chromosome = None
+			while chromosome is None or chromosome in tourn:
+				chromosome = population[random.randint(0, len(population)-1)]
+			tourn.append(chromosome)
+		winner = tourn[0]
+		for chromosome in tourn:
+			if chromosome.fitness > winner.fitness:
+				winner = chromosome
+		return winner
+
+	def roulette_select(self, population):
+		threshold = random.uniform(0, self.generation_fitness)
+		partial_sum = population[0].fitness
+		index = 0
+		while partial_sum < threshold:
+			index += 1
+			partial_sum += population[index].fitness
+		return population[index]
+
+	def crossover_parents(self, parent1, parent2, num_genes=1):
+		total_cities = len(self._scenario.getCities())
+
+		# crossover slice will be num_genes long
+		non_crossover = total_cities - num_genes
+		start = random.randint(0, non_crossover)
+		end = start + num_genes
+
+		parent1_slice = parent1.path[start:end]
+		parent2_slice = parent2.path[start:end]
+
+		child1 = []
+		child2 = []
+		count = 0
+		for i in parent2.path:
+			if count == non_crossover:
+				break
+			if i not in parent1_slice:
+				count += 1
+				child1.append(i)
+
+		count = 0
+		for i in parent1.path:
+			if count == non_crossover:
+				break
+			if i not in parent2_slice:
+				count += 1
+				child2.append(i)
+		child1[start:start] = parent1_slice
+		child2[start:start] = parent2_slice
+		return child1, child2
+
+	def crossover(self, parents, num_genes=1):
+		children = []
+		for i in range(0, len(parents), 2):
+			c1, c2 = self.crossover_parents(parents[i], parents[i+1], num_genes)
+			children.append(Genome(c1))
+			children.append(Genome(c2))
+
+		return children
+
+	def mutate_genome(self, genome, num_mutations=1, return_valid_path=False):
 		while True:
-			path = deepcopy(genome.path)
+			# path = deepcopy(genome.path)
 
 			# mutate the correct number of times
 			for i in range(num_mutations):
 				# get two indices so we can swap them
 				while True:
-					index_1 = random.randint(0, len(path) - 1)
-					index_2 = random.randint(0, len(path) - 1)
+					index_1 = random.randint(0, len(genome.path) - 1)
+					index_2 = random.randint(0, len(genome.path) - 1)
 					if index_1 != index_2:
 						break
+				genome.path[index_1], genome.path[index_2] = genome.path[index_2], genome.path[index_1]
 				# swap the two values
-				temp = path[index_1]
-				path[index_1] = path[index_2]
-				path[index_2] = temp
+				# temp = path[index_1]
+				# path[index_1] = path[index_2]
+				# path[index_2] = temp
 
 			# if it doesn't matter if the path is valid, break
 			if not return_valid_path:
 				break
 
 			# test if the path is valid; if so, break
-			route = [self._scenario.getCities()[i] for i in path]
-			solution = TSPSolution(route)
-			if solution.cost < np.inf:
+			#route = [self._scenario.getCities()[i] for i in path]
+			#solution = TSPSolution(route)
+			#if solution.cost < np.inf:
+			#	break
+
+	def mutate_genome_test(self, genome, index_1, num_mutations=1, return_valid_path=False):
+		while True:
+			# mutate the correct number of times
+			for i in range(num_mutations):
+				# get two indices so we can swap them
+				while True:
+					#index_1 = random.randint(0, len(genome.path) - 1)
+					index_2 = random.randint(0, len(genome.path) - 1)
+					if index_1 != index_2:
+						break
+				genome.path[index_1], genome.path[index_2] = genome.path[index_2], genome.path[index_1]
+
+			# if it doesn't matter if the path is valid, break
+			if not return_valid_path:
 				break
 
-		# save the path
-		genome.path = path
-
-	def mutate_population(self, population, chance_of_mutating=25, num_mutations=1, return_valid_path=True):
+	def mutate_population(self, population, chance_of_mutating=25, num_mutations=1, return_valid_path=False):
 		for genome in population:
-			if random.randint(0, 99) < chance_of_mutating:
-				self.mutate_genome(genome, num_mutations, return_valid_path)
+			for i, gene in enumerate(genome.path):
+				if random.randint(0, 99) < chance_of_mutating:
+					self.mutate_genome_test(genome, i, num_mutations, return_valid_path)
+			#if random.randint(0, 99) < chance_of_mutating:
+			#	self.mutate_genome(genome, num_mutations, return_valid_path)
 
 	def random_cull(self, population, num_to_keep, top_to_keep=1):
 
@@ -492,13 +615,17 @@ class TSPSolver:
 
 	@staticmethod
 	def ranked_cull(population, num_to_keep):
-		return sorted(population, key=lambda genome: genome.fitness, reverse=True)[:num_to_keep]
+		return sorted(population, key=lambda genome: genome.fitness, reverse=False)[:num_to_keep]
 
 	def cull_population(self, population, num_to_keep, method_name, top_to_keep=1):
 		if method_name == 'ranked':
-			return self.ranked_cull(population, num_to_keep)
+			culled = self.ranked_cull(population, num_to_keep)
+			print("Gen " + str(self.generation) + " Champion - Fitness: " + str(culled[0].fitness) + " - Cost: " + str(1/culled[0].fitness))
+			return culled
 		elif method_name == 'random':
-			return self.random_cull(population, num_to_keep, top_to_keep)
+			culled = self.random_cull(population, num_to_keep, top_to_keep)
+			print("Gen " + str(self.generation) + " Champion - Fitness: " + str(culled[0].fitness) + " - Cost: " + str(1/culled[0].fitness))
+			return culled
 		# TODO implement roulette culling method
 		else:
 			print('unrecognized method for culling population')
@@ -506,12 +633,12 @@ class TSPSolver:
 
 	@staticmethod
 	def get_index_of_best_genome(population):
-		lowest_cost = np.inf
+		best_fitness = float('-inf')
 		best_index = None
 
 		for i in range(len(population)):
-			if population[i].fitness < lowest_cost:
-				lowest_cost = population[i].fitness
+			if population[i].fitness > best_fitness:
+				best_fitness = population[i].fitness
 				best_index = i
 
 		return best_index
